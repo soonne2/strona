@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>SZESC - BRZYDKA STRONA</title>
+    <style>
+        body { font-family: "Times New Roman", Times, serif; background: white; color: black; max-width: 600px; margin: 20px auto; }
+        hr { border: 1px solid black; }
+        .ranking-item { margin: 5px 0; border-bottom: 1px dotted gray; display: flex; justify-content: space-between; }
+        button { cursor: pointer; border: 1px solid black; background: #eee; padding: 5px 10px; }
+        input { border: 1px solid black; }
+        #status { font-weight: bold; color: blue; }
+    </style>
+</head>
+<body>
+    <h1>SYSTEM RZUCANIA KOŚĆMI (SZESC)</h1>
+    <p>Rzuć aż wypadnie sześć szóstek.</p>
+    <hr>
+    
+    <label>Użytkownik:</label>
+    <input type="text" id="username" value="Użytkownik_01">
+    <button id="roll-button">URUCHOM GENERATOR</button>
+    
+    <div id="status" style="display:none; margin: 10px 0;">Trwa losowanie (AJAX)...</div>
+    
+    <div id="result" style="margin: 15px 0; font-size: 1.2em;">
+        Ostatni wynik: <span id="last-result">-</span> rzutów
+    </div>
+
+    <hr>
+    <h3>RANKING (REAL-TIME JSON)</h3>
+    <div id="ranking-container">Ładowanie rankingu...</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const rankingContainer = document.getElementById('ranking-container');
+        const statusDiv = document.getElementById('status');
+        const lastResultSpan = document.getElementById('last-result');
+
+        async function fetchRanking() {
+            try {
+                const response = await fetch('/api/scores');
+                const data = await response.json();
+                renderRanking(data);
+            } catch (error) {
+                console.error('Błąd pobierania rankingu:', error);
+            }
+        }
+
+        function renderRanking(data) {
+            if (data.length === 0) {
+                rankingContainer.innerHTML = 'Brak wyników w bazie.';
+                return;
+            }
+            rankingContainer.innerHTML = data.map((s, i) => `
+                <div class="ranking-item">
+                    <span>${i + 1}. ${s.name}</span>
+                    <span><b>${s.score.toLocaleString()}</b> rzutów</span>
+                </div>
+            `).join('');
+        }
+
+        async function startRoll() {
+            const name = document.getElementById('username').value;
+            statusDiv.style.display = 'block';
+            
+            // Generator (simulating locally to avoid server overload, then submitting)
+            let rolls = 0;
+            let win = false;
+            while(!win) {
+                rolls++;
+                const r = [
+                    Math.floor(Math.random() * 6) + 1,
+                    Math.floor(Math.random() * 6) + 1,
+                    Math.floor(Math.random() * 6) + 1,
+                    Math.floor(Math.random() * 6) + 1,
+                    Math.floor(Math.random() * 6) + 1,
+                    Math.floor(Math.random() * 6) + 1
+                ];
+                if(r.every(v => v === 6)) win = true;
+                
+                // Safety break
+                if(rolls > 5000000) break;
+            }
+
+            statusDiv.style.display = 'none';
+            lastResultSpan.innerText = rolls.toLocaleString();
+
+            // Submit via AJAX (JSON)
+            await fetch('/api/submit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, score: rolls })
+            });
+            
+            fetchRanking();
+        }
+
+        document.getElementById('roll-button').onclick = startRoll;
+
+        // Real-time update via Socket.io
+        socket.on('update', () => {
+            fetchRanking();
+        });
+
+        // Initial fetch
+        fetchRanking();
+    </script>
+</body>
+</html>
